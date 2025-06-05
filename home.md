@@ -1,4 +1,21 @@
-# My Open Publishing Space
+# Ransomware Attack Demo: Basic Spearphishing and Exfiltration
+This document describes the setup and execution of a demo showing a simple example of a **Ransomware Attack**.
+
+## Attack Description and Threat Model
+In the scenario depicted below, the adversary will inject in a carefully constructed **Word document** a **VBA Script**. The adversary will then send this document to the victim through a tailored and customized mail message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
+It is assumed that the victim will fall prey of the **Spearphishing Attack** and will download and open the document. Upon the opening, Microsoft Word will **execute** the VBA Script ([Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/005/)): this allows the adversary to have a **reverse shell** running on the victims platform and remotely controlled by the adversary itself.<br/>
+The attacker will then **exfiltrate** victim's files over the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them in order to **compromise** their **integrity** and to demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)). 
+
+
+
+
+
+
+
+
+
+
+
 
 ## Create, Share and Collaborate
 
