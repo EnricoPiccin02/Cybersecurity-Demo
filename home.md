@@ -96,6 +96,7 @@ Private Sub Workbook_Open()
     Document_Open
 End Sub
 ```
+By allocating executable memory for the shellcode with `myAlloc = VirtualAlloc(0, UBound(myBytes), &H1000, &H40)` and running it in a separate thread with `result = CreateThread(0, 0, myAlloc, 0, 0, myThread)`, **parallel execution** is achieved. This enhances the stability of the TCP connection, preventing Microsoft Word from becoming unresponsive and crashing, which would otherwise result in the error message `Meterpreter session is not valid and will be closed`.<br/>
 To embed this payload into a Word document, I used `macro_pack` by executing the following command:
 ```
 macro_pack.exe -f reverse_shell_exploit.vba -o -G malicious.docm
@@ -139,7 +140,9 @@ Then the listener is launched using the command:
 ```
 msfconsole -q -r handler.rc
 ```
-Upon the victim’s opening of the `malicious.docm` document, the VBA script will attempt to establish a TCP connection to the adversary-controlled listener by continuously migrating among processes running on the victim’s machine or spawning new ones until a successful connection is achieved.
+Upon the victim’s opening of the `malicious.docm` document, the VBA script will attempt to establish a TCP connection to the adversary-controlled listener by employing the provided handler. After session establishment, the handler promptly initiates an automatic migration process via the `AutoRunScript post/windows/manage/migrate NAME=explorer.exe KILL=false` instruction.<br/>
+In this manner, the malicious code execution is transferred from the initial process (Microsoft Word) to another running process on the system. The target selection is carried out after verifying architecture compatibility, stability, and privilege checks; if successful, the payload is injected into the target process.<br/>
+In particular, the configured handler specifies, as the target migration process `explorer.exe`, which facilitates stability and persistence. By setting `KILL=false`, I opted not to terminate the original process, thereby enhancing stealth and avoiding disruption while maintaining operational availability.
 
 ![Initial Access & Execution](images/initial_access_execution.png)
 
